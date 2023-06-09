@@ -124,7 +124,7 @@ def split_ff(dataset_path, p_train, p_val, p_test):
             )
         new_video_path = os.path.join(split_folder, new_video_name)
         # pdb.set_trace()
-        # shutil.move(video_path, new_video_path)
+        shutil.move(video_path, new_video_path)
 
     # SPLIT DEEPFAKE VIDEOS
     deepfakes_videos_path = [
@@ -142,14 +142,14 @@ def split_ff(dataset_path, p_train, p_val, p_test):
         elif source_individual in val_individuals_youtube:
             split_folder = fake_val_folder
         elif source_individual in test_individuals_youtube:
-            split_folder = fake_train_folder
+            split_folder = fake_test_folder
         else:
             raise SystemExit(
                 f"Individual {source_individual}, video path {video_path} not in any train, val or test splits"
             )
         new_video_path = os.path.join(split_folder, new_video_name)
 
-        # shutil.move(video_path, new_video_path)
+        shutil.move(video_path, new_video_path)
 
     # SPLIT FACESHIFTER VIDEOS
     faceshifter_videos_path = [
@@ -167,14 +167,13 @@ def split_ff(dataset_path, p_train, p_val, p_test):
         elif source_individual in val_individuals_youtube:
             split_folder = fake_val_folder
         elif source_individual in test_individuals_youtube:
-            split_folder = fake_train_folder
+            split_folder = fake_test_folder
         else:
             raise SystemExit(
                 f"Individual {source_individual}, video path {video_path} not in any train, val or test splits"
             )
         new_video_path = os.path.join(split_folder, new_video_name)
-        pdb.set_trace()
-        # shutil.move(video_path, new_video_path)
+        shutil.move(video_path, new_video_path)
 
     # SPLIT FACESWAP VIDEOS
     faceswap_videos_path = [
@@ -192,14 +191,14 @@ def split_ff(dataset_path, p_train, p_val, p_test):
         elif source_individual in val_individuals_youtube:
             split_folder = fake_val_folder
         elif source_individual in test_individuals_youtube:
-            split_folder = fake_train_folder
+            split_folder = fake_test_folder
         else:
             raise SystemExit(
                 f"Individual {source_individual}, video path {video_path} not in any train, val or test splits"
             )
         new_video_path = os.path.join(split_folder, new_video_name)
 
-        # shutil.move(video_path, new_video_path)
+        shutil.move(video_path, new_video_path)
 
 
 if __name__ == "__main__":
