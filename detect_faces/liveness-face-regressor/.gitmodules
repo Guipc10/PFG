@@ -1,0 +1,9 @@
+[submodule "src/MostElasticsearchTracingLib"]
+	path = src/MostElasticsearchTracingLib
+	url = git@gitlab.mostqi.com:digin/platform/MostElasticsearchTracingLib.git
+[submodule "tests/src/liveness-tests-s3-client"]
+	path = tests/src/liveness-tests-s3-client
+	url = git@gitlab.mostqi.com:engine/liveness/liveness-tests-s3-client.git
+[submodule "mediapipe"]
+	path = mediapipe
+	url = git@gitlab.mostqi.com:engine/liveness/mediapipe.git

@@ -1,0 +1,257 @@
+stages:
+  - unit-test
+  - build
+  - deploy-dev
+  - test-dev
+  - copy-dev-prod
+  - create-prod
+  - shift-traffic-prod
+  - finish-update-prod
+
+variables:
+  GIT_DEPTH: 2
+
+build-push:
+  stage: build
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - DOCKER_REGISTRY_URL=$(aws ssm get-parameter --name "/dev/docker-registry-url" --query Parameter.Value --output text)
+    - docker build -t ${DOCKER_REGISTRY_URL}/dev/liveness-fr:${VERSION} .
+    - docker push ${DOCKER_REGISTRY_URL}/dev/liveness-fr:${VERSION}
+  tags:
+    - dev
+    - ecs
+    - shell
+  only:
+    - dev
+
+unit-test:
+  stage: unit-test
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+  script:
+    - docker build . --file unit_test/Dockerfile
+  tags:
+    - dev
+    - ecs
+    - shell
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == 'master'
+      when: always
+
+update-ecs-dev:
+  stage: deploy-dev
+  timeout: 15m
+  allow_failure: true
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - aws s3 cp aws/mostqi-dev/config.yaml s3://mostqi-infra-dev/services/liveness-fr.yaml
+    - aws s3 cp s3://mostqi-infra-dev/scripts/dev/services/update-new.sh update.sh
+    - bash update.sh --service "liveness-fr" --version "${VERSION}"
+  environment:
+    name: aws-ecs-dev
+  tags:
+    - ecs
+    - dev
+    - shell
+  only:
+    - dev
+
+test-dev:
+  stage: test-dev
+  timeout: 4h
+  when: manual
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+  script:
+    - cd tests && ./build_and_run.sh
+  tags:
+    - ecs
+    - dev
+    - shell
+  only:
+    - dev
+    - dev-igor_test_standard
+
+.prod:
+  image:
+    name: amazon/aws-cli
+    entrypoint: ["/bin/bash", "-c"]
+  before_script:
+    - yum install -y git jq
+  tags:
+    - ecs
+    - prod
+    - docker
+
+copy-image-dev-prod:
+  stage: copy-dev-prod
+  image: "docker:19.03.12"
+  services:
+    - name: docker:19.03.12-dind
+      alias: docker
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - apk add bash git
+    - echo 'docker run --rm -v ~/.aws:/root/.aws -v $(pwd):/aws -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN amazon/aws-cli "$@"' > /bin/aws && chmod u+x /bin/aws
+  script:
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/get-parent-commit.sh get-parent-commit.sh
+    - PARENT_HASH=$(bash get-parent-commit.sh)
+    - VERSION_DEV=${PARENT_HASH:0:8}
+    - VERSION_PROD=${CI_COMMIT_SHA:0:8}
+
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/copy-image-cd.sh copy-image.sh
+    - bash copy-image.sh --service "liveness-fr" --version-dev $VERSION_DEV --version-prod $VERSION_PROD
+  allow_failure: false
+  tags:
+    - ecs
+    - prod
+    - docker
+  only:
+    - prod
+
+create-ecs-prod:
+  stage: create-prod
+  extends: .prod
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - aws s3 cp aws/mostqi-prod/config.yaml s3://mostqi-infra-prod/services/liveness-fr.yaml
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/services/update/create-new.sh create.sh
+    - bash create.sh --service "liveness-fr" --version "${VERSION}"
+  only:
+    - prod
+
+traffic-prod-0:
+  stage: shift-traffic-prod
+  extends: .prod
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/services/update/shift-traffic.sh shift-traffic.sh
+    - bash shift-traffic.sh --service "liveness-fr" --version "${VERSION}" --percentage 0
+  allow_failure: true
+  when: manual
+  needs: ["create-ecs-prod"]
+  only:
+    - prod
+
+traffic-prod-1:
+  stage: shift-traffic-prod
+  extends: .prod
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/services/update/shift-traffic.sh shift-traffic.sh
+    - bash shift-traffic.sh --service "liveness-fr" --version "${VERSION}" --percentage 1
+  allow_failure: true
+  when: manual
+  needs: ["create-ecs-prod"]
+  only:
+    - prod
+
+traffic-prod-5:
+  stage: shift-traffic-prod
+  extends: .prod
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/services/update/shift-traffic.sh shift-traffic.sh
+    - bash shift-traffic.sh --service "liveness-fr" --version "${VERSION}" --percentage 5
+  allow_failure: true
+  needs: ["create-ecs-prod"]
+  when: manual
+  only:
+    - prod
+
+traffic-prod-10:
+  stage: shift-traffic-prod
+  extends: .prod
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/services/update/shift-traffic.sh shift-traffic.sh
+    - bash shift-traffic.sh --service "liveness-fr" --version "${VERSION}" --percentage 10
+  allow_failure: true
+  when: manual
+  needs: ["create-ecs-prod"]
+  only:
+    - prod
+
+traffic-prod-25:
+  stage: shift-traffic-prod
+  extends: .prod
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/services/update/shift-traffic.sh shift-traffic.sh
+    - bash shift-traffic.sh --service "liveness-fr" --version "${VERSION}" --percentage 25
+  when: manual
+  allow_failure: true
+  needs: ["create-ecs-prod"]
+  only:
+    - prod
+
+traffic-prod-50:
+  stage: shift-traffic-prod
+  extends: .prod
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/services/update/shift-traffic.sh shift-traffic.sh
+    - bash shift-traffic.sh --service "liveness-fr" --version "${VERSION}" --percentage 50
+  when: manual
+  allow_failure: true
+  needs: ["create-ecs-prod"]
+  only:
+    - prod
+
+traffic-prod-75:
+  stage: shift-traffic-prod
+  extends: .prod
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/services/update/shift-traffic.sh shift-traffic.sh
+    - bash shift-traffic.sh --service "liveness-fr" --version "${VERSION}" --percentage 75
+  when: manual
+  allow_failure: true
+  needs: ["create-ecs-prod"]
+  only:
+    - prod
+
+traffic-prod-100:
+  stage: shift-traffic-prod
+  extends: .prod
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/services/update/shift-traffic.sh shift-traffic.sh
+    - bash shift-traffic.sh --service "liveness-fr" --version "${VERSION}" --percentage 100
+  when: manual
+  allow_failure: true
+  needs: ["create-ecs-prod"]
+  only:
+    - prod
+
+clean-up-prod:
+  stage: finish-update-prod
+  extends: .prod
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/services/update/clean-up.sh clean-up.sh
+    - bash clean-up.sh --service "liveness-fr" --version "${VERSION}"
+  environment:
+    name: aws-ecs-prod
+  when: manual
+  allow_failure: false
+  needs: ["traffic-prod-100"]
+  only:
+    - prod
+
+rollback-prod:
+  stage: finish-update-prod
+  extends: .prod
+  script:
+    - VERSION=${CI_COMMIT_SHA:0:8}
+    - aws s3 cp s3://mostqi-infra-prod/scripts/prod/services/update/rollback.sh rollback.sh
+    - bash rollback.sh --service "liveness-fr" --version "${VERSION}"
+  when: manual
+  allow_failure: true
+  needs: ["traffic-prod-0"]
+  only:
+    - prod

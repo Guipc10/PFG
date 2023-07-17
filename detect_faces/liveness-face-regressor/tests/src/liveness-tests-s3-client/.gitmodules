@@ -1,0 +1,3 @@
+[submodule "s3-client/src/lib"]
+	path = s3-client/src/lib
+	url = git@gitlab.mostqi.com:engine/liveness/liveness-lib.git

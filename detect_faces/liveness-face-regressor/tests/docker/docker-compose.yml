@@ -1,0 +1,23 @@
+version: '3.4'
+services:
+    face_regressor_test:
+        network_mode: host
+        build:
+            context: ../src/
+            dockerfile: Dockerfile 
+        image: img_face_regressor_test
+        environment:
+            - PYTHONUNBUFFERED=1
+            - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+            - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+            - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+            - PORT=4009
+            - EMOTION_CLASSIFICATION_PORT=4010
+            - REGRESSOR_PORT=4011
+            - INFERENCE_PORT=4012
+            - ACTION_RECOGNITION_PORT=4013
+            - EMOTION_CLASSIFICATION_URL=http://internal.dev.mostqi.com.br:{}/classify-emotion
+            - REGRESSOR_URL=http://internal.dev.mostqi.com.br:{}/regress-face
+            - MOBILENET_URL=http://internal.dev.mostqi.com.br:{}/pose-estimation
+            - ACTION_RECOGNITION_URL=http://internal.dev.mostqi.com.br:{}/action-recognition
+            - SERVER_URL=http://internal.dev.mostqi.com.br:{}/detect-liveness

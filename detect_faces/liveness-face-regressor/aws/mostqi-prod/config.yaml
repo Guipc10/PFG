@@ -1,0 +1,327 @@
+Parameters:
+  NetworkStackName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/services/liveness-fr/network-stack-name"
+    Description: Name of the Network stack
+  ClusterStackName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/services/liveness-fr/cluster-stack-name"
+    Description:
+      Cluster Name - Name of the Cluster stack (the one that creates the
+      ECS assets)
+  BackboneStackName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/services/liveness-fr/backbone-stack-name"
+    Description: Backbone Name - Name of the infrastructure
+  SnsErrorsStackName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/services/liveness-fr/sns-errors-stack-name"
+    Description: Name of the stack of SNS topics for errors
+  EnvironmentName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/services/liveness-fr/environment-name"
+    Description: Name of the Environment used to export metrics to Elastic
+  ImageUri:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/services/liveness-fr/image-uri"
+    Description: Image URI
+  ElasticApmSecretArn:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/services/liveness-fr/elastic-apm-secret-arn"
+    Description: Secret Arn of Elastic APM
+  ReplicaMin:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/services/liveness-fr/replica-min"
+    Description: Minimum number of replicas
+  ReplicaMax:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/services/liveness-fr/replica-max"
+    Description: Maximum number of replicas
+  ReplicaDesired:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/services/liveness-fr/replica-desired"
+    Description: Desired number of replicas
+Resources:
+  TGLivenessFaceRegressor:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name:
+        Fn::Sub: ${AWS::StackName}-tg
+      Protocol: HTTP
+      Port: 4011
+      VpcId:
+        Fn::ImportValue:
+          Fn::Sub: ${NetworkStackName}-VPCECS
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 60
+      HealthCheckTimeoutSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      HealthCheckPath: "/"
+      Matcher:
+        HttpCode: "200"
+      TargetType: ip
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "120"
+  TaskDefinitionLivenessFaceRegressor:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Cpu: 3900 # verificar cpu
+      Memory: 2048 
+      ContainerDefinitions:
+        - Name: liveness-face-regressor
+          Image:
+            Ref: ImageUri
+          Cpu: 3900
+          Memory: 2048
+          MemoryReservation: 1024 
+          PortMappings:
+            - ContainerPort: 4011
+              HostPort: 4011
+              Protocol: tcp
+          Essential: true
+          Environment:
+            - Name: "PORT"
+              Value: 4011
+            - Name: "N_PROCESSES"
+              Value: 2
+            - Name: ELASTIC_APM_SERVICE_NAME
+              Value: MostLivenessFaceRegressor
+            - Name: ELASTIC_APM_SERVER_URL
+              Value: https://764e39b50e584db6a195a9df5cea1339.apm.us-east-1.aws.cloud.es.io:443
+            - Name: ELASTIC_APM_ENVIRONMENT
+              Value:
+                Ref: EnvironmentName
+            - Name: ELASTIC_APM_SERVICE_VERSION
+              Value:
+                Ref: ImageUri
+          Secrets:
+            - Name: ELASTIC_APM_SECRET_TOKEN
+              ValueFrom:
+                Ref: ElasticApmSecretArn
+          MountPoints: []
+          VolumesFrom: []
+          DockerLabels:
+            service.name: liveness-face-regressor
+          LogConfiguration:
+            LogDriver: json-file
+            Options:
+              max-size: 10m
+              max-file: "10"
+      Family:
+        Fn::Sub: "${AWS::StackName}-taskdef"
+      ExecutionRoleArn:
+        Fn::ImportValue:
+          Fn::Sub: "${NetworkStackName}-ECSExecutionRole"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - EC2
+  ServiceLivenessFaceRegressor:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ListenerRuleLivenessFaceRegressor
+    Properties:
+      ServiceName:
+        Fn::Sub: "${AWS::StackName}-service"
+      Cluster:
+        Fn::ImportValue:
+          Fn::Sub: "${ClusterStackName}-ECSClusterGeral"
+      LaunchType: EC2
+      DesiredCount:
+        Ref: ReplicaDesired
+      HealthCheckGracePeriodSeconds: 60
+      LoadBalancers:
+        - ContainerName: liveness-face-regressor
+          ContainerPort: 4011
+          TargetGroupArn:
+            Ref: TGLivenessFaceRegressor
+      TaskDefinition:
+        Ref: TaskDefinitionLivenessFaceRegressor
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - Fn::ImportValue:
+                Fn::Sub: "${NetworkStackName}-SubnetPrivA"
+            - Fn::ImportValue:
+                Fn::Sub: "${NetworkStackName}-SubnetPrivB"
+            - Fn::ImportValue:
+                Fn::Sub: "${NetworkStackName}-SubnetPrivC"
+            - Fn::ImportValue:
+                Fn::Sub: "${NetworkStackName}-SubnetPrivD"
+          SecurityGroups:
+            - Fn::ImportValue:
+                Fn::Sub: "${NetworkStackName}-SGClusterGeral"
+          AssignPublicIp: DISABLED
+      SchedulingStrategy: REPLICA
+  ECSScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity:
+        Ref: ReplicaMax
+      MinCapacity:
+        Ref: ReplicaMin
+      ServiceNamespace: ecs
+      ScalableDimension: ecs:service:DesiredCount
+      ResourceId:
+        Fn::Join:
+          - ""
+          - - service/
+            - Fn::ImportValue:
+                Fn::Sub: "${ClusterStackName}-ECSClusterGeral"
+            - "/"
+            - Fn::GetAtt:
+                - ServiceLivenessFaceRegressor
+                - Name
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+  ServiceScalingPolicyCPU:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName:
+        Fn::Sub: "${AWS::StackName}-target-tracking-cpu"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: ECSScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 75
+        ScaleInCooldown: 180
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+  ServiceScalingPolicyMem:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName:
+        Fn::Sub: "${AWS::StackName}-target-tracking-mem"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: ECSScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 100
+        ScaleInCooldown: 180
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageMemoryUtilization
+  ListenerRuleLivenessFaceRegressor:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn:
+                  Ref: TGLivenessFaceRegressor
+                Weight: 1
+      Conditions:
+        - Field: http-header
+          HttpHeaderConfig:
+            HttpHeaderName: Env-Access-Token
+            Values:
+              - Fn::Sub: ${AWS::StackName}
+      ListenerArn:
+        Fn::ImportValue:
+          Fn::Sub: ${BackboneStackName}-ListenerALBInternal4011
+      Priority: 2
+  ServiceLivenessFaceRegressor5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmName:
+        Fn::Sub: ${AWS::StackName}-liveness-face-regressor-5xx
+      AlarmDescription: Service with Error 5xx
+      AlarmActions:
+        - Fn::ImportValue:
+            Fn::Sub: ${SnsErrorsStackName}-liveness-face-regressor-arn
+      MetricName: HTTPCode_Target_5XX_Count
+      Namespace: AWS/ApplicationELB
+      Statistic: Sum
+      Period: "60"
+      EvaluationPeriods: "1"
+      Threshold: "20"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: TargetGroup
+          Value:
+            Fn::GetAtt:
+              - TGLivenessFaceRegressor
+              - TargetGroupFullName
+        - Name: LoadBalancer
+          Value:
+            Fn::ImportValue:
+              Fn::Sub: ${BackboneStackName}-AlbInternalECSMostFullName
+  ServiceLivenessFaceRegressorNoHealthyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmName:
+        Fn::Sub: ${AWS::StackName}-liveness-face-regressor-no-healthy
+      AlarmDescription: Service with no healthy targets
+      AlarmActions:
+        - Fn::ImportValue:
+            Fn::Sub: ${SnsErrorsStackName}-liveness-face-regressor-arn
+      MetricName: HealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Statistic: Maximum
+      Period: "60"
+      EvaluationPeriods: "1"
+      Threshold: "1"
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      Dimensions:
+        - Name: TargetGroup
+          Value:
+            Fn::GetAtt:
+              - TGLivenessFaceRegressor
+              - TargetGroupFullName
+        - Name: LoadBalancer
+          Value:
+            Fn::ImportValue:
+              Fn::Sub: ${BackboneStackName}-AlbInternalECSMostFullName
+  ServiceLivenessFaceRegressorUnHealthyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmName:
+        Fn::Sub: ${AWS::StackName}-liveness-face-regressor-unhealthy
+      AlarmDescription: Service with unhealthy targets
+      AlarmActions:
+        - Fn::ImportValue:
+            Fn::Sub: ${SnsErrorsStackName}-liveness-face-regressor-arn
+      MetricName: UnHealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Statistic: Maximum
+      Period: "60"
+      EvaluationPeriods: "10"
+      Threshold: "1"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: TargetGroup
+          Value:
+            Fn::GetAtt:
+              - TGLivenessFaceRegressor
+              - TargetGroupFullName
+        - Name: LoadBalancer
+          Value:
+            Fn::ImportValue:
+              Fn::Sub: ${BackboneStackName}-AlbInternalECSMostFullName
+Outputs:
+  TGLivenessFaceRegressorOut:
+    Description: TGLivenessFaceRegressor Arn
+    Value:
+      Ref: TGLivenessFaceRegressor
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-TGLivenessFaceRegressor
+  TaskDefinitionLivenessFaceRegressorOut:
+    Description: TaskDefinitionLivenessFaceRegressor Arn
+    Value:
+      Ref: TaskDefinitionLivenessFaceRegressor
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-TaskDefinitionLivenessFaceRegressor"

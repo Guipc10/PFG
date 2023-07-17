@@ -1,0 +1,11 @@
+boto3==1.17.35
+requests==2.24.0
+pytest==6.2.2
+pytest-asyncio==0.14.0
+numpy==1.18.1
+aiohttp==3.7.2
+starlette==0.13.6
+opencv-python==4.5.5.62
+backoff==2.1.2
+decord==0.6.0
+Pillow==9.3.0

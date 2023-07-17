@@ -1,0 +1,8 @@
+version: '3'
+services:
+    face_regressor_test:
+        image: img_face_regressor_test
+        environment:
+            - PYTHONUNBUFFERED=1
+            - FACE_REGRESSOR_URL="http://internal.dev.mostqi.com.br"
+            - FACE_REGRESSOR_PORT=4010

@@ -1,0 +1,19 @@
+version: "3.4"
+
+services:
+  most_face_regressor:
+    image: face_regressor:latest
+    container_name: most_face_regressor
+
+    # restart: on-failure
+    build:
+      context: ../
+      dockerfile: Dockerfile
+
+    ipc: "host"
+
+    ports:
+      - 4011:4011
+
+    environment:
+      - PORT=4011

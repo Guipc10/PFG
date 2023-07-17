@@ -1,0 +1,46 @@
+---
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.0.1
+    hooks:
+      - id: trailing-whitespace
+        exclude: mediapipe/
+      - id: end-of-file-fixer
+        exclude: mediapipe/
+      - id: check-yaml
+        exclude: mediapipe/
+      - id: check-added-large-files
+        exclude: mediapipe/
+      - id: no-commit-to-branch
+        exclude: mediapipe/
+        args: [--branch, staging, --branch, master]
+      - id: pretty-format-json
+        exclude: mediapipe/
+        args: [--autofix]
+
+  - repo: https://github.com/ambv/black
+    rev: 22.3.0
+    hooks:
+      - id: black
+        exclude: mediapipe/
+        language_version: python3.8
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.26.1
+    hooks:
+      - id: yamllint
+        exclude: mediapipe/
+
+  - repo: https://github.com/humitos/mirrors-autoflake.git
+    rev: v1.1
+    hooks:
+      - id: autoflake
+        exclude: mediapipe/
+        args:
+          [
+            '--in-place',
+            '--remove-all-unused-imports',
+            '--remove-unused-variable'
+          ]

@@ -1,0 +1,17 @@
+version: "3.4"
+
+services:
+
+  detect_faces_10:
+    image: detect_faces:latest
+    container_name: detect_faces_10
+    environment:
+      - TXT_FILE=official/test_ar.txt
+    # restart: on-failure
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    volumes:
+      - /home/guilhermec/repos/pfg/datasets/DFDC/train/1-fake:/app/data
+    stdin_open: true
+    tty: true

@@ -1,0 +1,18 @@
+[run]
+omit =
+    # Never test MostElasticsearchTracingLib
+    src/MostElasticsearchTracingLib/*
+    # Don't test the testing folder
+    src/testing/*
+    unit_test/*
+    docker/*
+    .gitignore
+    .gitlab-ci.yml
+    .gitmodules
+    Dockerfile
+    README.md
+    requirements.txt
+
+[report]
+exclude_lines =
+    pragma: no cover
